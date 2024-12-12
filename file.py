@@ -1,22 +1,16 @@
 from pathlib import Path
 import re
-import torch
+
 import yaml
-from nn import BaseModel
-
-class Model:
-    def __init__(self, phi: str, num_classes: int):
-        dep_mul, wid_mul, deep_mul = yaml_model_load('./config.yaml', phi)
-        base_channels = int(wid_mul * 64)  # 64 default width
-        base_depth = max(round(dep_mul * 3), 1)  # 3 default depth
-        self.model = BaseModel(num_classes, base_channels, base_depth, deep_mul)
 
 
-def yaml_model_load(path, phi):
+def yaml_model_load(path):
     """Load a model from a YAML file."""
     path = Path(path)
-    d = yaml_load(path) 
-    return d['scales'][phi]
+    d = yaml_load(path)  # model dict
+    print(d['scales']['n'])
+    return d
+
 
 def yaml_load(file="data.yaml", append_filename=False):
     """
@@ -40,3 +34,5 @@ def yaml_load(file="data.yaml", append_filename=False):
         if append_filename:
             data["yaml_file"] = str(file)
         return data
+
+yaml_model_load('./config.yaml')

@@ -1,4 +1,8 @@
+scales: # model compound scaling constants, i.e. 'model=model11n.yaml' will call model11.yaml with scale 'n'
+  # [depth, width, max_channels]
+  n: [0.33, 0.25, 1.00] #
+  s: [0.33, 0.50, 1.00] #
+  m: [0.67, 0.75, 0.75] #
+  l: [1.00, 1.00, 0.5] #
+  x: [1.00, 1.50, 0.5] #
 
-depth_dict          = {'n' : 0.33, 's' : 0.33, 'm' : 0.67, 'l' : 1.00, 'x' : 1.00,}
-width_dict          = {'n' : 0.25, 's' : 0.50, 'm' : 0.75, 'l' : 1.00, 'x' : 1.25,}
-deep_width_dict     = {'n' : 1.00, 's' : 1.00, 'm' : 0.75, 'l' : 0.50, 'x' : 0.50,}
