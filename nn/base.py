@@ -4,7 +4,7 @@ from .backbone import Backbone
 from .head import Head
 from .neck import Neck
 
-class YOLO(nn.Module):
+class BaseModel(nn.Module):
     def __init__(self, num_classes: int, base_channels: int, base_depth: int, deep_mul: float):
         super().__init__()
         self.backbone = Backbone(base_channels, base_depth, deep_mul)
