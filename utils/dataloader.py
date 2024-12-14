@@ -1,16 +1,17 @@
-from random import sample, shuffle
-from typing import List, Tuple
-
 import cv2
+import os
+import json
 import numpy as np
 import torch
 from PIL import Image
 from torch.utils.data import Dataset
-
 from utils.utils import cvtColor, preprocess_input
+from random import sample, shuffle
+from typing import List, Tuple
+
 
 class ModelDataset(Dataset):
-    """dataset for object detection."""
+    """Dataset for object detection."""
 
     def __init__(self, annotation_lines: List[str], input_shape: Tuple[int, int], num_classes: int, epoch_length: int,
                  mosaic: bool, mixup: bool, mosaic_prob: float, mixup_prob: float, train: bool, special_aug_ratio: float = 0.7):
@@ -51,22 +52,27 @@ class ModelDataset(Dataset):
     def __getitem__(self, index: int) -> Tuple[np.ndarray, np.ndarray]:
         index = index % self.length
 
+        # Apply mosaic augmentation
         if self.mosaic and self.rand() < self.mosaic_prob and self.epoch_now < self.epoch_length * self.special_aug_ratio:
             lines = sample(self.annotation_lines, 3)
             lines.append(self.annotation_lines[index])
             shuffle(lines)
             image, box = self.get_random_data_with_Mosaic(lines, self.input_shape)
 
+            # Apply mixup augmentation
             if self.mixup and self.rand() < self.mixup_prob:
                 lines = sample(self.annotation_lines, 1)
                 image_2, box_2 = self.get_random_data(lines[0], self.input_shape, random=self.train)
                 image, box = self.get_random_data_with_MixUp(image, box, image_2, box_2)
         else:
+            # Regular data loading without mosaic/mixup
             image, box = self.get_random_data(self.annotation_lines[index], self.input_shape, random=self.train)
 
+        # Preprocess image and bounding boxes
         image = np.transpose(preprocess_input(np.array(image, dtype=np.float32)), (2, 0, 1))
         box = np.array(box, dtype=np.float32)
 
+        # Normalize bounding boxes
         nL = len(box)
         labels_out = np.zeros((nL, 6))
         if nL:
@@ -80,6 +86,7 @@ class ModelDataset(Dataset):
         return image, labels_out
 
     def rand(self, a: float = 0, b: float = 1) -> float:
+        """Generate a random float between a and b."""
         return np.random.rand() * (b - a) + a
 
     def get_random_data(self, annotation_line: str, input_shape: Tuple[int, int], jitter: float = .3, hue: float = .1, sat: float = 0.7, val: float = 0.4, random: bool = True) -> Tuple[np.ndarray, np.ndarray]:
@@ -106,6 +113,7 @@ class ModelDataset(Dataset):
         box = np.array([np.array(list(map(int, box.split(',')))) for box in line[1:]])
 
         if not random:
+            # Non-random resizing and padding
             scale = min(w / iw, h / ih)
             nw = int(iw * scale)
             nh = int(ih * scale)
@@ -130,6 +138,7 @@ class ModelDataset(Dataset):
 
             return image_data, box
 
+        # Random augmentations
         new_ar = iw / ih * self.rand(1 - jitter, 1 + jitter) / self.rand(1 - jitter, 1 + jitter)
         scale = self.rand(.25, 2)
         if new_ar < 1:
@@ -226,10 +235,10 @@ class ModelDataset(Dataset):
                     if x2 >= cutx and x1 <= cutx:
                         x1 = cutx
 
-                tmp_box = [x1, y1, x2, y2, box[-1]] # create a list here
+                tmp_box = [x1, y1, x2, y2, box[-1]]
                 merge_bbox.append(tmp_box)
         return merge_bbox
-    
+
     def get_random_data_with_Mosaic(self, annotation_line: List[str], input_shape: Tuple[int, int], jitter: float = 0.3, hue: float = .1, sat: float = 0.7, val: float = 0.4) -> Tuple[np.ndarray, list]:
         """
         Generates mosaic augmented data.
@@ -335,7 +344,7 @@ class ModelDataset(Dataset):
         new_boxes = self.merge_bboxes(box_datas, cutx, cuty)
 
         return new_image, new_boxes
-    
+
     def get_random_data_with_MixUp(self, image_1: np.ndarray, box_1: np.ndarray, image_2: np.ndarray, box_2: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """Mixes up two images and their bounding boxes.
 
@@ -356,7 +365,7 @@ class ModelDataset(Dataset):
         else:
             new_boxes = np.concatenate([box_1, box_2], axis=0)
         return new_image, new_boxes
-    
+
 def dataset_collate(batch: List[Tuple[np.ndarray, np.ndarray]]) -> Tuple[torch.Tensor, torch.Tensor]:
     """Collates a batch of images and bounding boxes.
     
@@ -376,3 +385,94 @@ def dataset_collate(batch: List[Tuple[np.ndarray, np.ndarray]]) -> Tuple[torch.T
     images = torch.from_numpy(np.array(images)).type(torch.FloatTensor)
     bboxes = torch.from_numpy(np.concatenate(bboxes, 0)).type(torch.FloatTensor)
     return images, bboxes
+
+
+
+class COCODataset(Dataset):
+    def __init__(self, dataset_path, input_shape, train=True, transform=None):
+        """
+        Initialize the COCODataset.
+        :param dataset_path: Path to the COCO dataset directory.
+        :param input_shape: Input image shape (height, width).
+        :param train: Whether the dataset is for training (default: True).
+        :param transform: Optional transformations to apply to the images and annotations.
+        """
+        self.dataset_path = dataset_path
+        self.input_shape = input_shape
+        self.train = train
+        self.transform = transform
+
+        # Load COCO annotations
+        annotation_file = os.path.join(dataset_path, "annotations.json")
+        with open(annotation_file, "r") as f:
+            self.coco_annotations = json.load(f)
+
+        # Extract image and annotation information
+        self.image_ids = [img['id'] for img in self.coco_annotations['images']]
+        self.image_paths = {img['id']: os.path.join(dataset_path, img['file_name']) for img in self.coco_annotations['images']}
+        self.annotations = self._parse_annotations()
+
+    def _parse_annotations(self):
+        """
+        Parse the COCO annotations into a dictionary format.
+        :return: A dictionary mapping image IDs to their annotations.
+        """
+        annotations = {img_id: [] for img_id in self.image_ids}
+        for ann in self.coco_annotations['annotations']:
+            img_id = ann['image_id']
+            bbox = ann['bbox']  # [x_min, y_min, width, height]
+            category_id = ann['category_id']
+            annotations[img_id].append((bbox, category_id))
+        return annotations
+
+    def __len__(self):
+        """
+        Return the number of images in the dataset.
+        """
+        return len(self.image_ids)
+
+    def __getitem__(self, idx):
+        """
+        Get an image and its annotations by index.
+        :param idx: Index of the image.
+        :return: A tuple containing the image tensor and its annotations.
+        """
+        # Get image ID and path
+        img_id = self.image_ids[idx]
+        img_path = self.image_paths[img_id]
+
+        # Load the image
+        image = Image.open(img_path).convert("RGB")
+
+        # Get annotations for the image
+        bboxes, labels = [], []
+        for bbox, category_id in self.annotations[img_id]:
+            x_min, y_min, width, height = bbox
+            x_max, y_max = x_min + width, y_min + height
+            bboxes.append([x_min, y_min, x_max, y_max])
+            labels.append(category_id)
+
+        # Convert to numpy arrays
+        bboxes = np.array(bboxes, dtype=np.float32)
+        labels = np.array(labels, dtype=np.int64)
+
+        # Apply transformations if provided
+        if self.transform:
+            image, bboxes, labels = self.transform(image, bboxes, labels)
+
+        # Convert to tensors
+        image = torch.tensor(np.array(image), dtype=torch.float32).permute(2, 0, 1)  # Convert to CHW format
+        bboxes = torch.tensor(bboxes, dtype=torch.float32)
+        labels = torch.tensor(labels, dtype=torch.int64)
+
+        return image, bboxes, labels
+
+    def collate_fn(self, batch):
+        """
+        Custom collate function to handle variable-sized annotations.
+        :param batch: A list of samples from the dataset.
+        :return: A tuple containing batched images, bounding boxes, and labels.
+        """
+        images, bboxes, labels = zip(*batch)
+        images = torch.stack(images, dim=0)
+        return images, bboxes, labels
