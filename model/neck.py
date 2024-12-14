@@ -14,17 +14,17 @@ class Neck(nn.Module):
 
         super().__init__()
 
-        self.up = nn.Upsample(scale_factor=2, mode='nearest') # upsample layer
+        self.up = nn.Upsample(scale_factor=2, mode='nearest')  # upsample layer
 
         # 1024 * deep_mul + 512, 40, 40 => 512, 40, 40
         self.h1 = nn.Sequential(
-            TransformerEncoderBlock(c1=int(base_channels * 16 * deep_mul) + base_channels * 8, c2=base_channels * 8),
+            TransformerEncoderBlock(channels=int(base_channels * 16 * deep_mul) + base_channels * 8),
             CBAM(base_channels * 8)  # Add CBAM for attention
         )
         
         # 768, 80, 80 => 256, 80, 80
         self.h2 = nn.Sequential(
-            TransformerEncoderBlock(c1=base_channels * 8 + base_channels * 4, c2=base_channels * 4),
+            TransformerEncoderBlock(channels=base_channels * 8 + base_channels * 4),
             CBAM(base_channels * 4)  # Add CBAM for attention
         )
         
@@ -36,7 +36,7 @@ class Neck(nn.Module):
         
         # 512 + 256, 40, 40 => 512, 40, 40
         self.h4 = nn.Sequential(
-            TransformerEncoderBlock(c1=base_channels * 8 + base_channels * 4, c2=base_channels * 8),
+            TransformerEncoderBlock(channels=base_channels * 8 + base_channels * 4),
             CBAM(base_channels * 8)  # Add CBAM for attention
         )
 
@@ -48,7 +48,7 @@ class Neck(nn.Module):
         
         # 1024 * deep_mul + 512, 20, 20 =>  1024 * deep_mul, 20, 20
         self.h6 = nn.Sequential(
-            TransformerEncoderBlock(c1=int(base_channels * 16 * deep_mul) + base_channels * 8, c2=int(base_channels * 16 * deep_mul)),
+            TransformerEncoderBlock(channels=int(base_channels * 16 * deep_mul) + base_channels * 8),
             CBAM(int(base_channels * 16 * deep_mul))  # Add CBAM for attention
         )
 

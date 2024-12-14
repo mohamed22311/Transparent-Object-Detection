@@ -257,6 +257,12 @@ class SelfAttention(nn.Module):
 class TransformerEncoderBlock(nn.Module):
     """Transformer Encoder Block."""
     def __init__(self, channels, num_heads=8, mlp_ratio=4):
+        """Initializes the Transformer Encoder Block.
+        Args:
+            channels (int): Number of input channels. what are they? 
+            num_heads (int): Number of attention heads.
+            mlp_ratio (int): Multiplier for the number of channels in the MLP.
+        """
         super(TransformerEncoderBlock, self).__init__()
         self.norm1 = nn.LayerNorm(channels)
         self.attn = nn.MultiheadAttention(channels, num_heads)
