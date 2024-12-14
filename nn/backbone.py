@@ -3,9 +3,9 @@ import torch.nn as nn
 from .blocks import Bottleneck, C2f, Conv, autopad, SPPF
 
 class Backbone(nn.Module):
-    """ YOLOv8 Backbone."""
+    """Backbone."""
     def __init__(self, base_channels, base_depth, deep_mul):
-        """Initializes the YOLOv8 backbone. 
+        """Initializes the backbone. 
         The input picture is 3, 640, 640
 
         Args:

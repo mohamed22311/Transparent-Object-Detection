@@ -3,9 +3,9 @@ import torch.nn as nn
 from .blocks import Conv, C2f
 
 class Neck(nn.Module):
-    """ YOLOv8 Neck."""
+    """ Model Neck."""
     def __init__(self, base_channels, base_depth, deep_mul):
-        """Initializes the YOLOv8 neck.
+        """Initializes the Model neck.
         Args:
             base_channels (int): Number of base channels.
             base_depth (int): Number of Bottleneck blocks in the first three layers.
