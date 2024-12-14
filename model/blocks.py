@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 
 def autopad(k, p=None, d=1):  
@@ -10,7 +11,7 @@ def autopad(k, p=None, d=1):
         d (int or tuple): Dilation size.
     Returns:
         Padding size.
-        """
+    """
     if d > 1:
         k = d * (k - 1) + 1 if isinstance(k, int) else [d * (x - 1) + 1 for x in k] # actual kernel-size
     if p is None:
@@ -55,7 +56,8 @@ class Conv(nn.Module):
     def forward_fuse(self, x):
         """Apply convolution and activation without batch normalization."""
         return self.act(self.conv(x))
-    
+
+
 class Bottleneck(nn.Module):
     """Standard bottleneck. 1x1, 3x3, 1x1 convolution with shortcut connection."""
 
@@ -78,7 +80,8 @@ class Bottleneck(nn.Module):
     def forward(self, x):
         """Applies the FPN to input data."""
         return x + self.cv2(self.cv1(x)) if self.add else self.cv2(self.cv1(x))
-    
+
+
 class C2f(nn.Module):
     """Faster Implementation of CSP Bottleneck with 2 convolutions."""
 
@@ -111,7 +114,8 @@ class C2f(nn.Module):
         y = [y[0], y[1]] 
         y.extend(m(y[-1]) for m in self.m) # apply n Bottleneck blocks
         return self.cv2(torch.cat(y, 1)) # concatenate and apply conv2
-    
+
+
 class SPPF(nn.Module):
     """Spatial Pyramid Pooling Fusion layer."""
 
@@ -152,6 +156,7 @@ class DFL(torch.nn.Module):
         x = x.view(b, 4, self.ch, a).transpose(2, 1)
         return self.conv(x.softmax(1)).view(b, 4, a)
 
+
 def fuse_conv(conv: nn.Conv2d, norm: nn.BatchNorm2d) -> nn.Conv2d:
     """Fuses a Conv2d layer and a BatchNorm2d layer into a single Conv2d layer.
     Args:
@@ -180,3 +185,99 @@ def fuse_conv(conv: nn.Conv2d, norm: nn.BatchNorm2d) -> nn.Conv2d:
     fused_conv.bias.copy_(torch.mm(w_norm, b_conv.reshape(-1, 1)).reshape(-1) + b_norm)
 
     return fused_conv
+
+
+class CBAM(nn.Module):
+    """Convolutional Block Attention Module (CBAM)."""
+    def __init__(self, channels, reduction=16, kernel_size=7):
+        super(CBAM, self).__init__()
+        # Channel attention
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+        self.fc1 = nn.Conv2d(channels, channels // reduction, 1, bias=False)
+        self.relu = nn.ReLU(inplace=True)
+        self.fc2 = nn.Conv2d(channels // reduction, channels, 1, bias=False)
+        self.sigmoid_channel = nn.Sigmoid()
+
+        # Spatial attention
+        self.conv = nn.Conv2d(2, 1, kernel_size=kernel_size, padding=kernel_size // 2, bias=False)
+        self.sigmoid_spatial = nn.Sigmoid()
+
+    def forward(self, x):
+        # Channel attention
+        avg_out = self.fc2(self.relu(self.fc1(self.avg_pool(x))))
+        max_out = self.fc2(self.relu(self.fc1(self.max_pool(x))))
+        channel_attention = self.sigmoid_channel(avg_out + max_out)
+
+        # Apply channel attention
+        x = x * channel_attention
+
+        # Spatial attention
+        avg_out = torch.mean(x, dim=1, keepdim=True)
+        max_out, _ = torch.max(x, dim=1, keepdim=True)
+        spatial_attention = self.sigmoid_spatial(self.conv(torch.cat([avg_out, max_out], dim=1)))
+
+        # Apply spatial attention
+        x = x * spatial_attention
+
+        return x
+
+
+class SelfAttention(nn.Module):
+    """Self-Attention Block."""
+    def __init__(self, channels):
+        super(SelfAttention, self).__init__()
+        self.query = nn.Conv2d(channels, channels // 8, kernel_size=1)
+        self.key = nn.Conv2d(channels, channels // 8, kernel_size=1)
+        self.value = nn.Conv2d(channels, channels, kernel_size=1)
+        self.gamma = nn.Parameter(torch.zeros(1))
+        self.softmax = nn.Softmax(dim=-1)
+
+    def forward(self, x):
+        batch_size, channels, height, width = x.size()
+
+        # Compute query, key, and value
+        query = self.query(x).view(batch_size, -1, height * width).permute(0, 2, 1)
+        key = self.key(x).view(batch_size, -1, height * width)
+        value = self.value(x).view(batch_size, -1, height * width)
+
+        # Attention scores
+        attention_scores = torch.bmm(query, key)
+        attention_scores = self.softmax(attention_scores)
+
+        # Apply attention to value
+        out = torch.bmm(value, attention_scores.permute(0, 2, 1))
+        out = out.view(batch_size, channels, height, width)
+
+        # Add residual connection
+        out = self.gamma * out + x
+        return out
+
+
+class TransformerEncoderBlock(nn.Module):
+    """Transformer Encoder Block."""
+    def __init__(self, channels, num_heads=8, mlp_ratio=4):
+        super(TransformerEncoderBlock, self).__init__()
+        self.norm1 = nn.LayerNorm(channels)
+        self.attn = nn.MultiheadAttention(channels, num_heads)
+        self.norm2 = nn.LayerNorm(channels)
+        self.mlp = nn.Sequential(
+            nn.Linear(channels, channels * mlp_ratio),
+            nn.GELU(),
+            nn.Linear(channels * mlp_ratio, channels)
+        )
+
+    def forward(self, x):
+        # Reshape for attention (B, C, H, W) -> (B, H*W, C)
+        B, C, H, W = x.size()
+        x = x.flatten(2).transpose(1, 2)
+
+        # Self-attention
+        x = x + self.attn(self.norm1(x), self.norm1(x), self.norm1(x))[0]
+
+        # MLP
+        x = x + self.mlp(self.norm2(x))
+
+        # Reshape back (B, H*W, C) -> (B, C, H, W)
+        x = x.transpose(1, 2).reshape(B, C, H, W)
+        return x

@@ -1,5 +1,5 @@
 import torch
-from .model import FOCUS  # Import the FOCUS model
+from model import FOCUS  # Import the FOCUS model
 
 def load_yolov8_weights(model, yolov8_weights_path):
     """
@@ -15,6 +15,7 @@ def load_yolov8_weights(model, yolov8_weights_path):
     try:
         # Load YOLOv8 weights
         yolov8_weights = torch.load(yolov8_weights_path, map_location='cpu')
+        print("YOLOv8 weights loaded successfully.")
 
         # Initialize the FOCUS model
         model_dict = model.state_dict()
@@ -41,38 +42,41 @@ def load_yolov8_weights(model, yolov8_weights_path):
 YOLOV8_WEIGHTS_PATH = './yolov8x.pt'
 
 # Path to COCO dataset
-COCO_DATASET_PATH = 'path_to_coco_dataset'
+COCO_DATASET_PATH = './data'
 
 # Create different model sizes
 focus_n = FOCUS(phi='n', classes_path='model_data/coco_classes.txt')
-focus_s = FOCUS(phi='s', classes_path='model_data/coco_classes.txt')
-focus_m = FOCUS(phi='m', classes_path='model_data/coco_classes.txt')
-focus_l = FOCUS(phi='l', classes_path='model_data/coco_classes.txt')
-focus_x = FOCUS(phi='x', classes_path='model_data/coco_classes.txt')
+# focus_s = FOCUS(phi='s', classes_path='model_data/coco_classes.txt')
+# focus_m = FOCUS(phi='m', classes_path='model_data/coco_classes.txt')
+# focus_l = FOCUS(phi='l', classes_path='model_data/coco_classes.txt')
+# focus_x = FOCUS(phi='x', classes_path='model_data/coco_classes.txt')
 
 # Load YOLOv8 weights into each model
 focus_n = load_yolov8_weights(focus_n.model, YOLOV8_WEIGHTS_PATH)
-focus_s = load_yolov8_weights(focus_s.model, YOLOV8_WEIGHTS_PATH)
-focus_m = load_yolov8_weights(focus_m.model, YOLOV8_WEIGHTS_PATH)
-focus_l = load_yolov8_weights(focus_l.model, YOLOV8_WEIGHTS_PATH)
-focus_x = load_yolov8_weights(focus_x.model, YOLOV8_WEIGHTS_PATH)
+# focus_s = load_yolov8_weights(focus_s.model, YOLOV8_WEIGHTS_PATH)
+# focus_m = load_yolov8_weights(focus_m.model, YOLOV8_WEIGHTS_PATH)
+# focus_l = load_yolov8_weights(focus_l.model, YOLOV8_WEIGHTS_PATH)
+# focus_x = load_yolov8_weights(focus_x.model, YOLOV8_WEIGHTS_PATH)
 
 # Check if weights were loaded successfully
-if focus_n is None or focus_s is None or focus_m is None or focus_l is None or focus_x is None:
+# if focus_n is None or focus_s is None or focus_m is None or focus_l is None or focus_x is None:
+#     raise ValueError("Failed to load YOLOv8 weights into one or more models.")
+
+if focus_n is None:
     raise ValueError("Failed to load YOLOv8 weights into one or more models.")
 
 # Fine-tune each model on your dataset
 focus_n.fine_tune(dataset_path=COCO_DATASET_PATH, epochs=50, batch_size=16, lr=1e-4, save_dir='./runs/logs_n')
-focus_s.fine_tune(dataset_path=COCO_DATASET_PATH, epochs=50, batch_size=16, lr=1e-4, save_dir='./runs/logs_s')
-focus_m.fine_tune(dataset_path=COCO_DATASET_PATH, epochs=50, batch_size=16, lr=1e-4, save_dir='./runs/logs_m')
-focus_l.fine_tune(dataset_path=COCO_DATASET_PATH, epochs=50, batch_size=16, lr=1e-4, save_dir='./runs/logs_l')
-focus_x.fine_tune(dataset_path=COCO_DATASET_PATH, epochs=50, batch_size=16, lr=1e-4, save_dir='./runs/logs_x')
+# focus_s.fine_tune(dataset_path=COCO_DATASET_PATH, epochs=50, batch_size=16, lr=1e-4, save_dir='./runs/logs_s')
+# focus_m.fine_tune(dataset_path=COCO_DATASET_PATH, epochs=50, batch_size=16, lr=1e-4, save_dir='./runs/logs_m')
+# focus_l.fine_tune(dataset_path=COCO_DATASET_PATH, epochs=50, batch_size=16, lr=1e-4, save_dir='./runs/logs_l')
+# focus_x.fine_tune(dataset_path=COCO_DATASET_PATH, epochs=50, batch_size=16, lr=1e-4, save_dir='./runs/logs_x')
 
 # Save the fine-tuned weights for each model
 torch.save(focus_n.model.state_dict(), 'focus_n_pretrained_weights.pth')
-torch.save(focus_s.model.state_dict(), 'focus_s_pretrained_weights.pth')
-torch.save(focus_m.model.state_dict(), 'focus_m_pretrained_weights.pth')
-torch.save(focus_l.model.state_dict(), 'focus_l_pretrained_weights.pth')
-torch.save(focus_x.model.state_dict(), 'focus_x_pretrained_weights.pth')
+# torch.save(focus_s.model.state_dict(), 'focus_s_pretrained_weights.pth')
+# torch.save(focus_m.model.state_dict(), 'focus_m_pretrained_weights.pth')
+# torch.save(focus_l.model.state_dict(), 'focus_l_pretrained_weights.pth')
+# torch.save(focus_x.model.state_dict(), 'focus_x_pretrained_weights.pth')
 
 print("Fine-tuned weights saved successfully.")

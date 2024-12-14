@@ -43,7 +43,7 @@ def get_lr(optimizer: torch.optim.Optimizer) -> float:
     """Gets the current learning rate from the optimizer."""
     for param_group in optimizer.param_groups:
         return param_group['lr']
-    return None # Return None if no param_groups are found
+    return None  # Return None if no param_groups are found
 
 def seed_everything(seed: int = 11) -> None:
     """Sets random seeds for reproducibility."""
@@ -76,23 +76,3 @@ def show_config(**kwargs):
         print('|%25s | %40s|' % (str(key), str(value)))
     print('-' * 70)
 
-def download_weights(phi: str, model_dir: str = "./model_data") -> None:
-    """Downloads pretrained weights."""
-    from torch.hub import load_state_dict_from_url
-
-    download_urls = {
-        "n": 'https://github.com/bubbliiiing/yolov8-pytorch/releases/download/v1.0/yolov8_n_backbone_weights.pth',
-        "s": 'https://github.com/bubbliiiing/yolov8-pytorch/releases/download/v1.0/yolov8_s_backbone_weights.pth',
-        "m": 'https://github.com/bubbliiiing/yolov8-pytorch/releases/download/v1.0/yolov8_m_backbone_weights.pth',
-        "l": 'https://github.com/bubbliiiing/yolov8-pytorch/releases/download/v1.0/yolov8_l_backbone_weights.pth',
-        "x": 'https://github.com/bubbliiiing/yolov8-pytorch/releases/download/v1.0/yolov8_x_backbone_weights.pth',
-    }
-    if phi not in download_urls:
-        raise ValueError(f"Invalid phi value: {phi}. Supported values are: {list(download_urls.keys())}")
-    url = download_urls[phi]
-
-    os.makedirs(model_dir, exist_ok=True) # use exist_ok=True to avoid error if directory exists
-    try:
-      load_state_dict_from_url(url, model_dir=model_dir)
-    except Exception as e:
-        print(f"Error downloading weights: {e}")

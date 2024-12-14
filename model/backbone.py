@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from .blocks import Bottleneck, C2f, Conv, autopad, SPPF
+from .blocks import Bottleneck, C2f, Conv, autopad, SPPF, CBAM, SelfAttention
 
 class Backbone(nn.Module):
     """Backbone."""
@@ -23,18 +23,21 @@ class Backbone(nn.Module):
         self.dark2 = nn.Sequential(
             Conv(base_channels, base_channels * 2, 3, 2),
             C2f(base_channels * 2, base_channels * 2, base_depth, True),
+            CBAM(base_channels * 2)  # Add CBAM after C2f
         )
 
         # 128, 160, 160 => 256, 80, 80 => 256, 80, 80
         self.dark3 = nn.Sequential(
             Conv(base_channels * 2, base_channels * 4, 3, 2),
             C2f(base_channels * 4, base_channels * 4, base_depth * 2, True),
+            SelfAttention(base_channels * 4)  # Add Self-Attention after C2f
         )
 
         # 256, 80, 80 => 512, 40, 40 => 512, 40, 40
         self.dark4 = nn.Sequential(
             Conv(base_channels * 4, base_channels * 8, 3, 2),
             C2f(base_channels * 8, base_channels * 8, base_depth * 2, True),
+            CBAM(base_channels * 8)  # Add CBAM after C2f
         )
 
         # 512, 40, 40 => 1024 * deep_mul, 20, 20 => 1024 * deep_mul, 20, 20
@@ -54,4 +57,3 @@ class Backbone(nn.Module):
         x = self.dark5(x)
         feat3 = x
         return feat1, feat2, feat3
-    

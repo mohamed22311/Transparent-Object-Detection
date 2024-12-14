@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import math
-from .blocks import Conv, DFL
+from .blocks import Conv, DFL, CBAM
 from utils import make_anchors
 
 class Head(nn.Module):
@@ -20,12 +20,28 @@ class Head(nn.Module):
         c2 = max((filters[0] // 4, self.ch * 4))
 
         self.dfl = DFL(self.ch) if self.ch > 1 else nn.Identity()
-        self.cls = nn.ModuleList(nn.Sequential(Conv(x, c1, 3),
-                                                           Conv(c1, c1, 3),
-                                                           nn.Conv2d(c1, self.nc, 1)) for x in filters)
-        self.box = nn.ModuleList(nn.Sequential(Conv(x, c2, 3),
-                                                           Conv(c2, c2, 3),
-                                                           nn.Conv2d(c2, 4 * self.ch, 1)) for x in filters)
+        
+        # Classification branch with CBAM
+        self.cls = nn.ModuleList(
+            nn.Sequential(
+                Conv(x, c1, 3),
+                CBAM(c1),  # Add CBAM after the first Conv
+                Conv(c1, c1, 3),
+                CBAM(c1),  # Add CBAM after the second Conv
+                nn.Conv2d(c1, self.nc, 1)
+            ) for x in filters
+        )
+        
+        # Bounding box regression branch with CBAM
+        self.box = nn.ModuleList(
+            nn.Sequential(
+                Conv(x, c2, 3),
+                CBAM(c2),  # Add CBAM after the first Conv
+                Conv(c2, c2, 3),
+                CBAM(c2),  # Add CBAM after the second Conv
+                nn.Conv2d(c2, 4 * self.ch, 1)
+            ) for x in filters
+        )
         
     def forward(self, x):
         for i in range(self.nl):
@@ -51,4 +67,7 @@ class Head(nn.Module):
         for a, b, s in zip(m.box, m.cls, m.stride):
             a[-1].bias.data[:] = 1.0  # box
             # cls (.01 objects, 80 classes, 640 img)
-            b[-1].bias.data[:m.nc] = math.log(5 / m.nc / (640 / s) ** 2)
+            # Add a small epsilon to avoid math domain error
+            epsilon = 1e-10
+            log_value = math.log(max(5 / m.nc / (640 / s) ** 2, epsilon))
+            b[-1].bias.data[:m.nc] = log_value

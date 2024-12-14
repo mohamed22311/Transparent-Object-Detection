@@ -14,8 +14,8 @@ import torch.optim as optim
 from torch.utils.data import DataLoader
 
 # Import your custom model (BaseModel)
-from nn import BaseModel  # Import the BaseModel architecture
-from nn import Loss, ModelEMA, get_lr_scheduler, set_optimizer_lr, weights_init
+from model import BaseModel  # Import the BaseModel architecture
+from model import Loss, ModelEMA, get_lr_scheduler, set_optimizer_lr, weights_init
 from utils.callbacks import EvalCallback, LossHistory
 from utils.dataloader import CustomDataset, custom_dataset_collate  # Replace with your dataset and collate function
 from utils.utils import (download_weights, get_classes, seed_everything,

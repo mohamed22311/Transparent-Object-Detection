@@ -1,16 +1,18 @@
 import os
 import torch
-from utils import download_weights, get_classes, show_config
-from utils import train_one_epoch
-from utils import ModelDataset, dataset_collate
-from utils import LossHistory, EvalCallback
-from nn import Loss, ModelEMA, BaseModel
 from torch.utils.data import DataLoader
 from torch.optim import Adam
 from torch.cuda.amp import GradScaler
 from PIL import Image
 from torchvision import transforms
 import cv2
+from tqdm import tqdm
+
+from model import BaseModel, Loss, ModelEMA
+from utils.dataloader import ModelDataset, dataset_collate
+from utils.callbacks import LossHistory, EvalCallback
+from utils.utils import get_classes, show_config, train_one_epoch
+
 
 class FOCUS:
     def __init__(self, phi='s', model_path=None, classes_path='model_data/coco_classes.txt', input_shape=(640, 640), cuda=True):
@@ -42,7 +44,6 @@ class FOCUS:
 
         # Move model to GPU if available
         if self.cuda:
-            self.model = torch.nn.DataParallel(self.model)
             self.model = self.model.cuda()
 
         # Define loss function
@@ -171,45 +172,17 @@ class FOCUS:
             source (str): Path to the image or video file.
         """
         if source.endswith(('.jpg', '.png', '.jpeg')):
-            return self.predict_image(self.model, source, self.input_shape, self.cuda)
+            return self.predict_image(source)
         elif source.endswith(('.mp4', '.avi')):
-            return self.predict_video(self.model, source, self.input_shape, self.cuda)
+            return self.predict_video(source)
         else:
             raise ValueError("Unsupported file format. Use .jpg, .png, .jpeg for images or .mp4, .avi for videos.")
 
-    def export_onnx(self, output_path):
-        """
-        Export the model to ONNX format.
-        Args:
-            output_path (str): Path to save the ONNX model.
-        """
-        print("Exporting the model to ONNX...")
-        torch.onnx.export(self.model, torch.zeros(1, 3, *self.input_shape).cuda() if self.cuda else torch.zeros(1, 3, *self.input_shape), output_path)
-        print(f"Model exported to {output_path}")
-
-    def _load_annotations(self, dataset_path, split):
-        """
-        Load annotations from the dataset.
-        Args:
-            dataset_path (str): Path to the dataset.
-            split (str): Dataset split ('train', 'val').
-        Returns:
-            list: List of annotation lines.
-        """
-        annotation_file = os.path.join(dataset_path, f'{split}.txt')
-        with open(annotation_file, 'r') as f:
-            return f.readlines()
-        
-    def predict_image(model, image_path, input_shape, cuda=True):
+    def predict_image(self, image_path):
         """
         Predict objects in a single image using the model.
-
         Args:
-            model (nn.Module): The trained object detection model.
             image_path (str): Path to the input image.
-            input_shape (tuple): Input image shape (height, width).
-            cuda (bool): Use CUDA if available.
-
         Returns:
             dict: A dictionary containing the predictions with keys:
                 - 'boxes': List of bounding boxes (x1, y1, x2, y2).
@@ -219,21 +192,19 @@ class FOCUS:
         # Load and preprocess the image
         image = Image.open(image_path).convert("RGB")
         image_tensor = transforms.ToTensor()(image).unsqueeze(0)  # Add batch dimension
-
-        # Resize the image to the input shape
-        image_tensor = torch.nn.functional.interpolate(image_tensor, size=input_shape, mode='bilinear', align_corners=False)
+        image_tensor = torch.nn.functional.interpolate(image_tensor, size=self.input_shape, mode='bilinear', align_corners=False)
 
         # Move to GPU if available
-        if cuda:
+        if self.cuda:
             image_tensor = image_tensor.cuda()
-            model = model.cuda()
+            self.model = self.model.cuda()
 
         # Set the model to evaluation mode
-        model.eval()
+        self.model.eval()
 
         # Perform inference
         with torch.no_grad():
-            predictions = model(image_tensor)
+            predictions = self.model(image_tensor)
 
         # Post-process the predictions
         boxes = predictions['boxes'].cpu().numpy()  # Bounding boxes (x1, y1, x2, y2)
@@ -253,18 +224,13 @@ class FOCUS:
             'labels': filtered_labels,
             'scores': filtered_scores
         }
-    
-    def predict_video(model, video_path, input_shape, cuda=True, output_path=None):
+
+    def predict_video(self, video_path, output_path=None):
         """
         Predict objects in a video using the model.
-
         Args:
-            model (nn.Module): The trained object detection model.
             video_path (str): Path to the input video file.
-            input_shape (tuple): Input image shape (height, width).
-            cuda (bool): Use CUDA if available.
             output_path (str): Path to save the output video with predictions (optional).
-
         Returns:
             None
         """
@@ -285,7 +251,7 @@ class FOCUS:
             out = cv2.VideoWriter(output_path, fourcc, fps, (frame_width, frame_height))
 
         # Set the model to evaluation mode
-        model.eval()
+        self.model.eval()
 
         frame_count = 0
         while True:
@@ -297,16 +263,16 @@ class FOCUS:
             # Preprocess the frame
             frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             frame_tensor = transforms.ToTensor()(frame_rgb).unsqueeze(0)  # Add batch dimension
-            frame_tensor = torch.nn.functional.interpolate(frame_tensor, size=input_shape, mode='bilinear', align_corners=False)
+            frame_tensor = torch.nn.functional.interpolate(frame_tensor, size=self.input_shape, mode='bilinear', align_corners=False)
 
             # Move to GPU if available
-            if cuda:
+            if self.cuda:
                 frame_tensor = frame_tensor.cuda()
-                model = model.cuda()
+                self.model = self.model.cuda()
 
             # Perform inference
             with torch.no_grad():
-                predictions = model(frame_tensor)
+                predictions = self.model(frame_tensor)
 
             # Post-process the predictions
             boxes = predictions['boxes'].cpu().numpy()  # Bounding boxes (x1, y1, x2, y2)
@@ -346,3 +312,26 @@ class FOCUS:
         if output_path:
             out.release()
         print("\nVideo processing complete.")
+
+    def export_onnx(self, output_path):
+        """
+        Export the model to ONNX format.
+        Args:
+            output_path (str): Path to save the ONNX model.
+        """
+        print("Exporting the model to ONNX...")
+        torch.onnx.export(self.model, torch.zeros(1, 3, *self.input_shape).cuda() if self.cuda else torch.zeros(1, 3, *self.input_shape), output_path)
+        print(f"Model exported to {output_path}")
+
+    def _load_annotations(self, dataset_path, split):
+        """
+        Load annotations from the dataset.
+        Args:
+            dataset_path (str): Path to the dataset.
+            split (str): Dataset split ('train', 'val').
+        Returns:
+            list: List of annotation lines.
+        """
+        annotation_file = os.path.join(dataset_path, f'{split}.txt')
+        with open(annotation_file, 'r') as f:
+            return f.readlines()

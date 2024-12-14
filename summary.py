@@ -4,7 +4,7 @@
 import torch
 from thop import clever_format, profile
 
-from nn import BaseModel
+from model import BaseModel
 
 if __name__ == "__main__":
     # Define input parameters
